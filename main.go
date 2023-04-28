@@ -18,15 +18,10 @@ type Options struct {
 }
 
 func New(r *gin.Engine, opts ...*Options) *GinAnnot {
-	var logger Logger
-	if len(opts) > 0 {
-		if opts[0].Logger != nil {
-			logger = opts[0].Logger
-		}
-	} else {
-		logger = &DefaultLogger{}
+	var logger Logger = &DefaultLogger{}
+	if len(opts) > 0 && opts[0].Logger != nil {
+		logger = opts[0].Logger
 	}
-
 	return &GinAnnot{
 		engine: r,
 		logger: logger,
