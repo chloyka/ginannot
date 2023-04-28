@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+type Handler interface{}
+
 type GinAnnot struct {
 	engine *gin.Engine
 	logger Logger
@@ -28,7 +30,7 @@ func New(r *gin.Engine, opts ...*Options) *GinAnnot {
 	}
 }
 
-func (a *GinAnnot) Apply(controllers []interface{}) {
+func (a *GinAnnot) Apply(controllers []Handler) {
 	middlewaresMap := make(map[string]Middleware)
 	middlewares := make(map[string][]func(*gin.Context))
 	groups := make(map[string]*Group)
@@ -36,50 +38,60 @@ func (a *GinAnnot) Apply(controllers []interface{}) {
 	for _, ctrl := range controllers {
 		ctrlType := reflect.TypeOf(ctrl)
 		ctrlVal := reflect.ValueOf(ctrl)
+
 		if ctrlType.Kind() != reflect.Ptr {
 			panic(errors.New("controller must be a pointer"))
 		}
+
 		ctrlTypeValue := ctrlType.Elem()
 		ctrlValValue := ctrlVal.Elem()
 
 		for i := 0; i < ctrlTypeValue.NumField(); i++ {
 			fieldType := ctrlTypeValue.Field(i)
 			fieldVal := ctrlValValue.Field(i)
-			if fieldType.Type.Kind() == reflect.Struct {
-				for n := 0; n < fieldVal.NumField(); n++ {
-					subfieldType := fieldType.Type.Field(n)
 
-					if subfieldType.Type == reflect.TypeOf(Middleware{}) {
-						fieldTags := subfieldType.Tag.Get("middleware")
-						if fieldTags == "" {
-							continue
-						}
-						middleware, err := parseMiddlewareTag(fieldTags)
-						if err != nil {
-							return
-						}
-						handlerFunc := ctrlVal.MethodByName(subfieldType.Name)
-						if !handlerFunc.IsValid() {
-							continue
-						}
-						middleware.Callback = handlerFunc.Interface().(func(*gin.Context))
+			if fieldType.Type.Kind() != reflect.Struct {
+				continue
+			}
 
-						middlewaresMap[middleware.Name] = *middleware
-					}
+			for n := 0; n < fieldVal.NumField(); n++ {
+				subfieldType := fieldType.Type.Field(n)
+
+				if subfieldType.Type != reflect.TypeOf(Middleware{}) {
+					continue
 				}
+
+				fieldTags := subfieldType.Tag.Get("middleware")
+				if fieldTags == "" {
+					continue
+				}
+
+				middleware, err := parseMiddlewareTag(fieldTags)
+				if err != nil {
+					return
+				}
+
+				handlerFunc := ctrlVal.MethodByName(subfieldType.Name)
+				if !handlerFunc.IsValid() {
+					continue
+				}
+
+				middleware.Callback = handlerFunc.Interface().(func(*gin.Context))
+				middlewaresMap[middleware.Name] = *middleware
+			}
+		}
+	}
+
+	for key, middleware := range middlewaresMap {
+		middlewares[key] = make([]func(*gin.Context), 0)
+
+		for _, m := range middleware.Chain {
+			if v, ok := middlewaresMap[m]; ok {
+				middlewares[key] = append(middlewares[key], v.Callback)
 			}
 		}
 
-		for key, middleware := range middlewaresMap {
-			middlewares[key] = make([]func(*gin.Context), 0)
-
-			for _, m := range middleware.Chain {
-				if v, ok := middlewaresMap[m]; ok {
-					middlewares[key] = append(middlewares[key], v.Callback)
-				}
-			}
-			middlewares[key] = append(middlewares[key], middleware.Callback)
-		}
+		middlewares[key] = append(middlewares[key], middleware.Callback)
 	}
 
 	for _, ctrl := range controllers {

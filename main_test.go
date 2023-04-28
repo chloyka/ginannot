@@ -39,7 +39,7 @@ func TestApply(t *testing.T) {
 	r := gin.New()
 	c := &Controller{}
 	annot := New(r)
-	annot.Apply([]interface{}{c})
+	annot.Apply([]Handler{c})
 	if len(r.Routes()) != 4 {
 		t.Errorf("Expected 4 routes, got %d", len(r.Routes()))
 	}
@@ -160,7 +160,7 @@ func TestWithMiddlewares(t *testing.T) {
 	}
 	c := &DefaultController{}
 	annot := New(r)
-	annot.Apply([]interface{}{c, m})
+	annot.Apply([]Handler{c, m})
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/api/v7/product/1", nil)
 	r.ServeHTTP(w, req)
